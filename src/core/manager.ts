@@ -219,13 +219,13 @@ class AccountManagerImpl {
   async logout(key: AccountKey): Promise<void> {
     const account = this.accounts.get(key);
     if (!account) return;
+    await deleteSession(key);
     this.accounts.delete(key);
     if (this.activeKey === key) {
       this.setActive(this.accounts.keys().next().value ?? null);
     }
     this.events.emit("accounts");
     this.events.emit("rooms");
-    await deleteSession(key);
     await account.destroy();
   }
 

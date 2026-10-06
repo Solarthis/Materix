@@ -19,77 +19,59 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
 // Used for the crypto-store key record; caller owns the full key name.
 export async function secretSet(key: string, value: string): Promise<void> {
   if (isTauri()) {
-    try {
-      await tauriInvoke("secret_set", { key, value });
-      return;
-    } catch (e) {
-      console.warn("Keychain unavailable, using localStorage", e);
-    }
+    await tauriInvoke("secret_set", { key, value });
+    return;
   }
   localStorage.setItem(key, value);
 }
 
 export async function secretGet(key: string): Promise<string | null> {
-  if (isTauri()) {
-    try {
-      const v = await tauriInvoke<string | null>("secret_get", { key });
-      if (v != null) return v;
-    } catch (e) {
-      console.warn("Keychain unavailable, reading localStorage", e);
-    }
-  }
+  if (isTauri()) return tauriInvoke<string | null>("secret_get", { key });
   return localStorage.getItem(key);
 }
 
 export async function saveSession(key: string, data: SessionData): Promise<void> {
-  const value = JSON.stringify(data);
-  if (isTauri()) {
-    try {
-      await tauriInvoke("secret_set", { key: PREFIX + key, value });
-      return;
-    } catch (e) {
-      console.warn("Keychain unavailable, falling back to localStorage", e);
+  await secretSet(PREFIX + key, JSON.stringify(data));
+}
+
+function parseSession(value: string | null): SessionData | null {
+  if (!value) return null;
+  try {
+    const data = JSON.parse(value);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    for (const field of ["userId", "deviceId", "accessToken", "homeserverUrl"]) {
+      if (typeof data[field] !== "string" || !data[field]) return null;
     }
-  }
-  localStorage.setItem(PREFIX + key, value);
+    for (const field of ["refreshToken", "identityServerUrl"]) {
+      if (data[field] !== undefined && typeof data[field] !== "string") return null;
+    }
+    return data as SessionData;
+  } catch { return null; }
 }
 
 export async function loadSessions(): Promise<Map<string, SessionData>> {
   const out = new Map<string, SessionData>();
   if (isTauri()) {
-    try {
-      const keys = await tauriInvoke<string[]>("secret_list_keys");
-      for (const k of keys) {
-        if (!k.startsWith(PREFIX)) continue;
-        const v = await tauriInvoke<string | null>("secret_get", { key: k });
-        if (v) out.set(k.slice(PREFIX.length), JSON.parse(v) as SessionData);
-      }
-    } catch (e) {
-      console.warn("Keychain unavailable, reading localStorage", e);
+    const keys = await tauriInvoke<string[]>("secret_list_keys");
+    for (const key of keys) {
+      if (!key.startsWith(PREFIX)) continue;
+      const data = parseSession(await tauriInvoke<string | null>("secret_get", { key }));
+      if (data) out.set(key.slice(PREFIX.length), data);
     }
+    return out;
   }
   for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i)!;
-    if (!k.startsWith(PREFIX)) continue;
-    const short = k.slice(PREFIX.length);
-    if (out.has(short)) continue;
-    try {
-      out.set(short, JSON.parse(localStorage.getItem(k)!) as SessionData);
-    } catch {
-      localStorage.removeItem(k);
-    }
+    const key = localStorage.key(i);
+    if (!key?.startsWith(PREFIX)) continue;
+    const data = parseSession(localStorage.getItem(key));
+    if (data) out.set(key.slice(PREFIX.length), data);
+    // Preserve malformed records; a read must not destroy recovery material.
   }
   return out;
 }
 
 export async function deleteSession(key: string): Promise<void> {
-  if (isTauri()) {
-    try {
-      await tauriInvoke("secret_delete", { key: PREFIX + key });
-    } catch {
-      // fall through to localStorage cleanup either way
-    }
-  }
+  if (isTauri()) await tauriInvoke("secret_delete", { key: PREFIX + key });
   localStorage.removeItem(PREFIX + key);
 }
 

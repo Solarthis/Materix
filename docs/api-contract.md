@@ -29,8 +29,24 @@ are surfaced, not hidden). Tokens are persisted per account:
 - **Desktop (Tauri)**: OS keychain via IPC command `secret_set`/`secret_get`
   (Stronghold/keychain plugin); `localStorage` is NOT used for tokens on desktop.
 
+Persistence failures reject the operation. Desktop secret reads/writes and
+session restoration never fall back to browser storage, including when a
+keychain lookup returns no value. Malformed session records are skipped one at
+a time and preserved for recovery; loading is not a deletion operation.
+Logout removes durable credentials before removing the account from the UI;
+if durable deletion fails, the account remains available and the error is
+surfaced so the user can retry. Legacy desktop localStorage records are not
+automatically imported or erased.
+
+Implementation gap at this revision: the checked-in Tauri `lib.rs` does not
+register the documented `secret_*` IPC handlers. With fail-closed persistence,
+desktop sign-in/restore remains blocked until a native keychain implementation
+is supplied and verified. Web storage is still supported. This is a release
+blocker, not evidence of a functioning native keychain backend.
+
 `accountKey` = `sha256(userId + "|" + deviceId).slice(0,16)`. Logout calls
-`/logout` best-effort, then always destroys local session + crypto stores.
+`/logout` best-effort during account destruction, after durable credential
+deletion succeeds, then destroys local session + crypto stores.
 
 ## Matrix CS API subset (consumed via matrix-js-sdk)
 

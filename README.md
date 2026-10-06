@@ -9,7 +9,11 @@ Materix has no backend of its own: it talks directly to Matrix homeservers over
 the [Client-Server API](https://spec.matrix.org/v1.11/client-server-api/) via
 `matrix-js-sdk`, with encryption handled by the Rust `matrix-sdk-crypto` WASM
 module. The desktop build is a thin [Tauri 2](https://tauri.app) shell that
-stores access tokens in the OS keychain.
+is intended to store access tokens in the OS keychain. The checked-in native
+shell currently lacks the documented `secret_*` IPC handlers. Desktop secret
+operations now fail closed rather than silently writing tokens or crypto keys
+to localStorage. Native sign-in/restore is blocked pending implementation and
+verification of those handlers; the web client still uses localStorage.
 
 > Status: pre-1.0 (`0.y.z`). The feature set below works and is verified, but
 > the public surface is not yet frozen and breaking changes can land between
